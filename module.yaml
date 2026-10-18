@@ -1,0 +1,181 @@
+id: risk-management
+name: Risk Management Module
+version: 0.1.0
+description: A risk management process module governing risks, the controls that treat them, and the incidents that show where they materialised.
+grounding_type: rule
+format: 3
+
+# The module's own meta-rules and invariants: rr-RISK-NNN and INV-RISK-n.
+namespace: RISK
+kernel_version: ">=0.83.0"
+
+# Ceremony tiers (rr-META-006): a chore needs no artifact; assessing a risk
+# is a RISK; recording what went wrong is an INCIDENT.
+tiers:
+  - id: chore
+    artifact: none
+    commit: "chore:"
+  - id: risk
+    artifact: RISK
+  - id: incident
+    artifact: INCIDENT
+
+entities:
+  RISK:
+    name: "Risk"
+    folder: risks
+    grounding: required
+    grounding_field: Threatens
+    status_hint: "exactly one of `Identified` / `Assessed` / `Treated` / `Accepted` / `Closed` (starts `Identified`; `Accepted` and `Closed` are its closed states)"
+    fields:
+      Threatens:
+        kind: ref-list
+        required: true
+        to: rule
+        hint: "the rule IDs this risk could break — **required, never empty**: a risk is grounded in what it threatens"
+      Domain:
+        kind: ref
+        required: true
+        to: domain
+        hint: "the `DOMAIN` code of the threatened rule(s)"
+      Likelihood:
+        kind: enum
+        required: true
+        values: [Rare, Unlikely, Possible, Likely, "Almost certain"]
+        hint: "exactly one of `Rare` / `Unlikely` / `Possible` / `Likely` / `Almost certain`"
+      Impact:
+        kind: enum
+        required: true
+        values: [Minor, Moderate, Major, Severe]
+        hint: "exactly one of `Minor` / `Moderate` / `Major` / `Severe`"
+      Owner:
+        kind: text
+        hint: "the registered user answerable for the risk"
+      Controls:
+        kind: ref-list
+        to: CONTROL
+        hint: "`CONTROL-NNNNNN` list treating this risk — back-populated from each control's `Treats`, never hand-edited"
+      Incidents:
+        kind: ref-list
+        to: INCIDENT
+        hint: "`INCIDENT-NNNNNN` list where this risk materialised — back-populated from each incident's `Risks`"
+    states: [Identified, Assessed, Treated, Accepted, Closed]
+    initial: Identified
+    closed: [Accepted, Closed]
+    guards:
+      Treated:
+        - section_written: Treatment
+    sections:
+      - Description: |
+          What could happen, to what, and why it matters: the event, the cause
+          and the consequence, in a sentence each.
+      - Assessment: |
+          Why the likelihood and the impact are what the fields say, from the
+          evidence at hand.
+      - Treatment: |
+          How it is treated — the controls under `Controls`, or why it is
+          accepted as it is and by whom.
+      - Related: |
+          Other `RISK-` IDs this depends on, aggravates or duplicates.
+    definition: "A `RISK-NNNNNN` records one risk to the project: what could happen, its likelihood and impact, who owns it, and the rules it threatens (`Threatens`, required). It is treated by controls (`Controls`, back-populated) or accepted, and incidents show where it materialised (`Incidents`). Lives in `risks/`, registered in `risks.md`."
+  CONTROL:
+    name: "Control"
+    folder: controls
+    grounding: required
+    grounding_field: Implements
+    status_hint: "exactly one of `Planned` / `Implemented` / `Effective` / `Ineffective` / `Retired` (starts `Planned`; `Retired` is its closed state)"
+    fields:
+      Implements:
+        kind: ref-list
+        required: true
+        to: rule
+        hint: "the rule IDs this control carries out — **required**"
+      Treats:
+        kind: ref-list
+        to: RISK
+        backref: Controls
+        hint: "`RISK-NNNNNN` list this control treats; each is cited back in the risk's `Controls`"
+      Kind:
+        kind: enum
+        required: true
+        values: [Preventive, Detective, Corrective]
+        hint: "exactly one of `Preventive` / `Detective` / `Corrective`"
+      Owner:
+        kind: text
+        hint: "the registered user answerable for the control"
+    states: [Planned, Implemented, Effective, Ineffective, Retired]
+    initial: Planned
+    closed: [Retired]
+    guards:
+      Effective:
+        - section_written: Evidence
+    sections:
+      - Description: |
+          What the control does, where and when it acts.
+      - Evidence: |
+          How it was shown to work: a test, an audit, an observation, with its
+          date. A control is not `Effective` without it.
+      - Related: |
+          Other `CONTROL-` IDs it complements or replaces.
+    definition: "A `CONTROL-NNNNNN` records one control: what it does, its kind (preventive, detective, corrective), its owner, the rules it carries out (`Implements`, required) and the risks it treats (`Treats`, cited back in each risk's `Controls`). It is not `Effective` without its evidence. Lives in `controls/`, registered in `controls.md`."
+  INCIDENT:
+    name: "Incident"
+    folder: incidents
+    grounding: required
+    grounding_field: Breaks
+    status_hint: "exactly one of `Open` / `Investigating` / `Resolved` / `Closed` (starts `Open`; `Closed` is its closed state)"
+    fields:
+      Breaks:
+        kind: ref-list
+        required: true
+        to: rule
+        hint: "the rule IDs the incident broke — **required**"
+      Risks:
+        kind: ref-list
+        to: RISK
+        backref: Incidents
+        hint: "`RISK-NNNNNN` list that materialised; each is cited back in the risk's `Incidents`"
+      Severity:
+        kind: enum
+        required: true
+        values: [Low, Medium, High, Critical]
+        hint: "exactly one of `Low` / `Medium` / `High` / `Critical`"
+      Occurred:
+        kind: text
+        hint: "YYYY-MM-DD"
+    states: [Open, Investigating, Resolved, Closed]
+    initial: Open
+    closed: [Closed]
+    guards:
+      Closed:
+        - section_written: Lessons
+    sections:
+      - What happened: |
+          The facts, in order, with times.
+      - Cause: |
+          Why it happened: the root cause, and the risk it shows.
+      - Lessons: |
+          What changes because of it: a new or stronger control, a rule
+          changed, a risk reassessed. An incident does not close without them.
+      - Related: |
+          Other `INCIDENT-` IDs this repeats or follows.
+    definition: "An `INCIDENT-NNNNNN` records one incident: what happened, its severity, when, the rules it broke (`Breaks`, required), the risks that materialised (`Risks`, cited back in each risk's `Incidents`), its cause and its lessons; it does not close without the lessons. Lives in `incidents/`, registered in `incidents.md`."
+
+commands:
+  - name: create-risk
+    description: Record a risk against the rules it threatens
+    argument_hint: "[<rule-id>]"
+  - name: create-control
+    description: Record a control carrying out a rule and treating risks
+    argument_hint: "[<rule-id>]"
+  - name: create-incident
+    description: Record an incident against the rules it broke
+    argument_hint: "[<rule-id>]"
+  - name: risk-register
+    description: Summarize the open risks by likelihood and impact, with their controls
+
+contributions:
+  rules_of_rules: rules-of-rules.module.md
+  code_of_conduct: code-of-conduct.module.md
+  invariants: INVARIANTS.module.md
+  migrations: migrations/
